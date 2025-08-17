@@ -156,3 +156,56 @@ resource "aws_iam_role_policy_attachment" "attach_s3" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = aws_iam_policy.s3_backup_policy.arn
 }
+# --- SNS topic for alerts ---
+resource "aws_sns_topic" "alerts" {
+  name = "minecraft-bedrock-alerts"
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# --- EC2 'down' alarm (AWS status checks fail) ---
+resource "aws_cloudwatch_metric_alarm" "ec2_status_failed" {
+  alarm_name          = "bedrock-ec2-statuscheckfailed"
+  alarm_description   = "EC2 status checks failing (instance likely down)"
+  namespace           = "AWS/EC2"
+  metric_name         = "StatusCheckFailed"   # combined instance+system
+  statistic           = "Maximum"
+  period              = 60                    # check every 1 minute
+  evaluation_periods  = 2                     # for 2 minutes
+  datapoints_to_alarm = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "missing"
+
+  dimensions = {
+    InstanceId = aws_instance.bedrock.id
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+}
+
+# --- OPTIONAL: High CPU alarm (helps spot overload) ---
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name          = "bedrock-ec2-cpu-high"
+  alarm_description   = "CPU > 80% for 5 minutes"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 5
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+
+  dimensions = {
+    InstanceId = aws_instance.bedrock.id
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+}

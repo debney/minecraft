@@ -48,3 +48,9 @@ variable "max_players" {
   type    = number
   default = 10
 }
+# Email address to receive alerts (you'll confirm via email)
+variable "alert_email" {
+  type        = string
+  description = "Email address for CloudWatch alarms"
+  default     = "debney@gmail.com"
+}
