@@ -26,10 +26,10 @@ resource "aws_security_group" "bedrock_sg" {
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = var.enable_ipv6 ? ["::/0"] : []
   }
 
@@ -44,7 +44,10 @@ data "aws_iam_policy" "ssm_core" {
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
     actions = ["sts:AssumeRole"]
-    principals { type = "Service", identifiers = ["ec2.amazonaws.com"] }
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
   }
 }
 
@@ -70,7 +73,7 @@ locals {
     set -euxo pipefail
 
     dnf update -y
-    dnf install -y docker
+    dnf install -y docker awscli
     systemctl enable --now docker
     usermod -aG docker ec2-user
 
@@ -91,6 +94,10 @@ locals {
       -e VIEW_DISTANCE=${var.view_distance} \
       -e MAX_PLAYERS=${var.max_players} \
       itzg/minecraft-bedrock-server:latest
+
+    # --- Backup section ---
+    # Add hourly sync to S3 (replace bucket name if different)
+    echo "0 * * * * root aws s3 sync /opt/bedrock s3://${aws_s3_bucket.minecraft_backups.bucket}/world" >> /etc/crontab
   BASH
 }
 
@@ -101,7 +108,10 @@ locals { subnet_id = data.aws_subnets.default_public.ids[0] }
 data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["137112412989"] # Amazon
-  filter { name = "name", values = ["al2023-ami-*-x86_64"] }
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
 }
 
 resource "aws_instance" "bedrock" {
@@ -125,4 +135,24 @@ resource "aws_instance" "bedrock" {
 resource "aws_eip" "bedrock_eip" {
   instance = aws_instance.bedrock.id
   domain   = "vpc"
+}
+
+data "aws_iam_policy_document" "s3_access" {
+  statement {
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+    resources = [
+      aws_s3_bucket.minecraft_backups.arn,
+      "${aws_s3_bucket.minecraft_backups.arn}/*"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "s3_backup_policy" {
+  name   = "bedrock-s3-backup"
+  policy = data.aws_iam_policy_document.s3_access.json
+}
+
+resource "aws_iam_role_policy_attachment" "attach_s3" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_backup_policy.arn
 }
