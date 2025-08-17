@@ -1,8 +1,5 @@
-# Look up a default VPC + public subnet (works in new accounts).
-# If your account has no default VPC, see README for a VPC module alternative.
-data "aws_vpc" "default" {
-  default = true
-}
+# Use default VPC and one of its subnets.
+data "aws_vpc" "default" { default = true }
 
 data "aws_subnets" "default_public" {
   filter {
@@ -11,10 +8,10 @@ data "aws_subnets" "default_public" {
   }
 }
 
-# Security group: UDP 19132 (Bedrock), optional SSH blocked (we'll use SSM).
+# Security group allowing UDP/19132 (Bedrock)
 resource "aws_security_group" "bedrock_sg" {
   name        = "bedrock-sg"
-  description = "Allow Bedrock UDP 19132 and instance egress"
+  description = "Allow Bedrock UDP 19132"
   vpc_id      = data.aws_vpc.default.id
 
   dynamic "ingress" {
@@ -29,7 +26,6 @@ resource "aws_security_group" "bedrock_sg" {
   }
 
   egress {
-    description = "All egress"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -40,24 +36,21 @@ resource "aws_security_group" "bedrock_sg" {
   tags = { Name = "bedrock-sg" }
 }
 
-# IAM role + instance profile for SSM Session Manager
+# SSM access (no SSH keys needed)
 data "aws_iam_policy" "ssm_core" {
   arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_role" "ec2_role" {
-  name               = "bedrock-ec2-ssm"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
 }
 
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
     actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
+    principals { type = "Service", identifiers = ["ec2.amazonaws.com"] }
   }
+}
+
+resource "aws_iam_role" "ec2_role" {
+  name               = "bedrock-ec2-ssm"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
 }
 
 resource "aws_iam_role_policy_attachment" "attach_ssm" {
@@ -70,7 +63,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
-# User data: install Docker and run the Bedrock container
+# User data: install Docker and run itzg/minecraft-bedrock-server
 locals {
   user_data = <<-BASH
     #!/bin/bash
@@ -84,7 +77,6 @@ locals {
     mkdir -p /opt/bedrock
     chown ec2-user:ec2-user /opt/bedrock
 
-    # pull & run the server (multi-arch image)
     docker pull itzg/minecraft-bedrock-server:latest
 
     docker run -d --name=bedrock \
@@ -102,20 +94,14 @@ locals {
   BASH
 }
 
-# Pick the first public subnet in the default VPC for simplicity
-locals {
-  subnet_id = data.aws_subnets.default_public.ids[0]
-}
+# Choose a subnet from the default VPC
+locals { subnet_id = data.aws_subnets.default_public.ids[0] }
 
-# Latest Amazon Linux 2023 AMI (x86_64)
+# AL2023 AMI
 data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["137112412989"] # Amazon
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
+  filter { name = "name", values = ["al2023-ami-*-x86_64"] }
 }
 
 resource "aws_instance" "bedrock" {
@@ -127,29 +113,16 @@ resource "aws_instance" "bedrock" {
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   user_data                   = local.user_data
 
-  # Root volume: expand if you want more space for worlds/backups
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
   }
 
-  tags = {
-    Name = "bedrock-server"
-  }
+  tags = { Name = "bedrock-server" }
 }
 
-# Elastic IP so your server IP doesn't change on reboot
+# Elastic IP so your IP is stable
 resource "aws_eip" "bedrock_eip" {
   instance = aws_instance.bedrock.id
   domain   = "vpc"
-}
-
-output "server_ip" {
-  description = "Public IP of your Bedrock server"
-  value       = aws_eip.bedrock_eip.public_ip
-}
-
-output "connect_hint" {
-  description = "How to connect from Bedrock clients"
-  value       = "Add Server -> Address: ${aws_eip.bedrock_eip.public_ip}  Port: 19132 (UDP)"
 }
