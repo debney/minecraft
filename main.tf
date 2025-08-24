@@ -209,3 +209,50 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 }
+# IAM role for EventBridge to use SSM
+resource "aws_iam_role" "eventbridge_ec2_role" {
+  name = "eventbridge-ec2-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "events.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eventbridge_ssm" {
+  role       = aws_iam_role.eventbridge_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMFullAccess"
+}
+
+# EventBridge rule: restart EC2 daily at 13:00 UTC
+resource "aws_cloudwatch_event_rule" "daily_restart" {
+  name                = "bedrock-daily-restart"
+  description         = "Restart Bedrock EC2 daily at 13:00 UTC"
+  schedule_expression = "cron(0 13 * * ? *)" # 13:00 UTC daily
+}
+
+# Target: send to SSM to restart instance
+resource "aws_cloudwatch_event_target" "daily_restart_target" {
+  rule      = aws_cloudwatch_event_rule.daily_restart.name
+  target_id = "RestartEC2"
+  arn       = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/AWS-RunShellScript"
+  role_arn  = aws_iam_role.eventbridge_ec2_role.arn
+
+  input = jsonencode({
+    DocumentName = "AWS-RunShellScript"
+    Targets = [{
+      Key    = "InstanceIds"
+      Values = [aws_instance.bedrock.id]
+    }]
+    Parameters = {
+      commands = ["sudo reboot"]
+    }
+  })
+}
+
+data "aws_caller_identity" "current" {}
