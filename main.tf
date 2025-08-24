@@ -1,18 +1,48 @@
-# Use default VPC and one of its subnets.
-data "aws_vpc" "default" { default = true }
+############################################
+# Networking: minimal public VPC
+############################################
 
-data "aws_subnets" "default_public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  tags = { Name = "mc-vpc" }
 }
 
-# Security group allowing UDP/19132 (Bedrock)
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "mc-igw" }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags = { Name = "mc-public-1a" }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = { Name = "mc-public-rt" }
+}
+
+resource "aws_route_table_association" "public_assoc" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+############################################
+# Security Group: Bedrock UDP 19132
+############################################
+
 resource "aws_security_group" "bedrock_sg" {
   name        = "bedrock-sg"
   description = "Allow Bedrock UDP 19132"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   dynamic "ingress" {
     for_each = var.allowed_ingress_cidr
@@ -36,7 +66,10 @@ resource "aws_security_group" "bedrock_sg" {
   tags = { Name = "bedrock-sg" }
 }
 
-# SSM access (no SSH keys needed)
+############################################
+# IAM for EC2: SSM core + S3 backup access
+############################################
+
 data "aws_iam_policy" "ssm_core" {
   arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
@@ -61,12 +94,34 @@ resource "aws_iam_role_policy_attachment" "attach_ssm" {
   policy_arn = data.aws_iam_policy.ssm_core.arn
 }
 
+# S3 backup permissions (bucket defined further below)
+data "aws_iam_policy_document" "s3_access" {
+  statement {
+    actions = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+    resources = [
+      aws_s3_bucket.minecraft_backups.arn,
+      "${aws_s3_bucket.minecraft_backups.arn}/*"
+    ]
+  }
+}
+resource "aws_iam_policy" "s3_backup_policy" {
+  name   = "bedrock-s3-backup"
+  policy = data.aws_iam_policy_document.s3_access.json
+}
+resource "aws_iam_role_policy_attachment" "attach_s3" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_backup_policy.arn
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "bedrock-ec2-profile"
   role = aws_iam_role.ec2_role.name
 }
 
-# User data: install Docker and run itzg/minecraft-bedrock-server
+############################################
+# User data: install Docker + Bedrock + hourly S3 sync
+############################################
+
 locals {
   user_data = <<-BASH
     #!/bin/bash
@@ -95,16 +150,15 @@ locals {
       -e MAX_PLAYERS=${var.max_players} \
       itzg/minecraft-bedrock-server:latest
 
-    # --- Backup section ---
-    # Add hourly sync to S3 (replace bucket name if different)
-    echo "0 * * * * root aws s3 sync /opt/bedrock s3://${aws_s3_bucket.minecraft_backups.bucket}/world" >> /etc/crontab
+    # Hourly backup of /opt/bedrock to S3
+    grep -q 'minecraft-debney-backups' /etc/crontab || echo "0 * * * * root aws s3 sync /opt/bedrock s3://${aws_s3_bucket.minecraft_backups.bucket}/world" >> /etc/crontab
   BASH
 }
 
-# Choose a subnet from the default VPC
-locals { subnet_id = data.aws_subnets.default_public.ids[0] }
+############################################
+# AMI + EC2 instance + Elastic IP
+############################################
 
-# AL2023 AMI
 data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["137112412989"] # Amazon
@@ -117,7 +171,7 @@ data "aws_ami" "al2023" {
 resource "aws_instance" "bedrock" {
   ami                         = data.aws_ami.al2023.id
   instance_type               = var.instance_type
-  subnet_id                   = local.subnet_id
+  subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.bedrock_sg.id]
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
@@ -131,32 +185,15 @@ resource "aws_instance" "bedrock" {
   tags = { Name = "bedrock-server" }
 }
 
-# Elastic IP so your IP is stable
 resource "aws_eip" "bedrock_eip" {
   instance = aws_instance.bedrock.id
   domain   = "vpc"
 }
 
-data "aws_iam_policy_document" "s3_access" {
-  statement {
-    actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-    resources = [
-      aws_s3_bucket.minecraft_backups.arn,
-      "${aws_s3_bucket.minecraft_backups.arn}/*"
-    ]
-  }
-}
+############################################
+# CloudWatch alarms + SNS email
+############################################
 
-resource "aws_iam_policy" "s3_backup_policy" {
-  name   = "bedrock-s3-backup"
-  policy = data.aws_iam_policy_document.s3_access.json
-}
-
-resource "aws_iam_role_policy_attachment" "attach_s3" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = aws_iam_policy.s3_backup_policy.arn
-}
-# --- SNS topic for alerts ---
 resource "aws_sns_topic" "alerts" {
   name = "minecraft-bedrock-alerts"
 }
@@ -167,29 +204,26 @@ resource "aws_sns_topic_subscription" "alerts_email" {
   endpoint  = var.alert_email
 }
 
-# --- EC2 'down' alarm (AWS status checks fail) ---
 resource "aws_cloudwatch_metric_alarm" "ec2_status_failed" {
   alarm_name          = "bedrock-ec2-statuscheckfailed"
   alarm_description   = "EC2 status checks failing (instance likely down)"
   namespace           = "AWS/EC2"
-  metric_name         = "StatusCheckFailed"   # combined instance+system
+  metric_name         = "StatusCheckFailed"
   statistic           = "Maximum"
-  period              = 60                    # check every 1 minute
-  evaluation_periods  = 2                     # for 2 minutes
+  period              = 60
+  evaluation_periods  = 2
   datapoints_to_alarm = 1
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "missing"
 
-  dimensions = {
-    InstanceId = aws_instance.bedrock.id
-  }
+  dimensions = { InstanceId = aws_instance.bedrock.id }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 }
 
-# --- OPTIONAL: High CPU alarm (helps spot overload) ---
+# Optional: high CPU alarm to spot overload
 resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_name          = "bedrock-ec2-cpu-high"
   alarm_description   = "CPU > 80% for 5 minutes"
@@ -202,24 +236,26 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "missing"
 
-  dimensions = {
-    InstanceId = aws_instance.bedrock.id
-  }
+  dimensions = { InstanceId = aws_instance.bedrock.id }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 }
-# IAM role for EventBridge to use SSM
+
+############################################
+# Daily restart at 13:00 UTC via EventBridge → SSM
+############################################
+
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_role" "eventbridge_ec2_role" {
   name = "eventbridge-ec2-role"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "events.amazonaws.com" },
       Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "events.amazonaws.com"
-      }
     }]
   })
 }
@@ -229,30 +265,28 @@ resource "aws_iam_role_policy_attachment" "eventbridge_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMFullAccess"
 }
 
-# EventBridge rule: restart EC2 daily at 13:00 UTC
 resource "aws_cloudwatch_event_rule" "daily_restart" {
   name                = "bedrock-daily-restart"
   description         = "Restart Bedrock EC2 daily at 13:00 UTC"
-  schedule_expression = "cron(0 13 * * ? *)" # 13:00 UTC daily
+  schedule_expression = "cron(0 13 * * ? *)"
 }
 
-# Target: send to SSM to restart instance
 resource "aws_cloudwatch_event_target" "daily_restart_target" {
   rule      = aws_cloudwatch_event_rule.daily_restart.name
   target_id = "RestartEC2"
-  arn       = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/AWS-RunShellScript"
-  role_arn  = aws_iam_role.eventbridge_ec2_role.arn
 
+  # SSM document to run shell commands
+  arn      = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/AWS-RunShellScript"
+  role_arn = aws_iam_role.eventbridge_ec2_role.arn
+
+  # WHICH instances to run on
+  run_command_targets {
+    key    = "InstanceIds"
+    values = [aws_instance.bedrock.id]
+  }
+
+  # WHAT to run
   input = jsonencode({
-    DocumentName = "AWS-RunShellScript"
-    Targets = [{
-      Key    = "InstanceIds"
-      Values = [aws_instance.bedrock.id]
-    }]
-    Parameters = {
-      commands = ["sudo reboot"]
-    }
+    commands = ["sudo reboot"]
   })
 }
-
-data "aws_caller_identity" "current" {}
