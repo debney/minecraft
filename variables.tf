@@ -30,7 +30,7 @@ variable "eula" {
 }
 variable "gamemode" {
   type    = string
-  default = "creative"
+  default = "survival"
 } # survival|creative|adventure
 variable "difficulty" {
   type    = string
@@ -38,7 +38,26 @@ variable "difficulty" {
 } # peaceful|easy|normal|hard
 variable "level_name" {
   type    = string
-  default = "BedrockWorld"
+  default = "SurvivalWorld"
+}
+
+# Enables cheats/commands for the world (server.properties allow-cheats). Must
+# be true for the showcoordinates game rule to actually display coordinates.
+variable "allow_cheats" {
+  type    = bool
+  default = true
+}
+
+# World game rules (not server.properties settings), so they are applied via the
+# server console after the world loads. user_data sets them on every boot so
+# freshly generated worlds get them too.
+variable "keep_inventory" {
+  type    = bool
+  default = true
+}
+variable "show_coordinates" {
+  type    = bool
+  default = true
 }
 variable "view_distance" {
   type    = number

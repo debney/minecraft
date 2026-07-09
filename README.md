@@ -5,7 +5,7 @@
 If you ever rebuild or lose the server, run this inside the EC2 instance to restore your world:
 
 ```bash
-aws s3 sync s3://minecraft-debney-backups/world /opt/bedrock && docker restart bedrock
+aws s3 sync s3://minecraft-debney-backups/worlds /opt/bedrock/worlds && docker restart bedrock
 ```
 
 ---
@@ -68,22 +68,24 @@ connect_hint  = "Add Server -> Address: minecraft.debney.net  Port: 19132 (UDP)"
 
 ### Automatic backups
 - Terraform creates an S3 bucket: **`minecraft-debney-backups`**  
-- The EC2 instance syncs `/opt/bedrock` → S3 hourly:
+- The EC2 instance syncs the world save data `/opt/bedrock/worlds` → S3 hourly:
   ```bash
-  aws s3 sync /opt/bedrock s3://minecraft-debney-backups/world
+  aws s3 sync /opt/bedrock/worlds s3://minecraft-debney-backups/worlds
   ```
+- Only the `worlds/` save data is backed up. The server binary and packs are
+  reinstalled automatically on every rebuild, so there's no need to store them.
 - S3 versioning is enabled, so even overwritten/deleted files are recoverable.  
 
 ### Manual backup
 Trigger a backup anytime:
 ```bash
-aws s3 sync /opt/bedrock s3://minecraft-debney-backups/world
+aws s3 sync /opt/bedrock/worlds s3://minecraft-debney-backups/worlds
 ```
 
 ### Restore from backup
 If you rebuild the server:
 ```bash
-aws s3 sync s3://minecraft-debney-backups/world /opt/bedrock
+aws s3 sync s3://minecraft-debney-backups/worlds /opt/bedrock/worlds
 docker restart bedrock
 ```
 
@@ -101,7 +103,7 @@ Use this if the server is destroyed or rebuilt.
    ```
 2. **Restore world data**
    ```bash
-   aws s3 sync s3://minecraft-debney-backups/world /opt/bedrock
+   aws s3 sync s3://minecraft-debney-backups/worlds /opt/bedrock/worlds
    docker restart bedrock
    ```
 3. **Verify server**
@@ -124,7 +126,7 @@ Use this if the server is destroyed or rebuilt.
 ### Dry run
 Check what would restore without copying:
 ```bash
-aws s3 sync s3://minecraft-debney-backups/world /tmp/test-world --dryrun
+aws s3 sync s3://minecraft-debney-backups/worlds /tmp/test-world --dryrun
 ```
 
 ### Spin up a test server
@@ -135,7 +137,7 @@ aws s3 sync s3://minecraft-debney-backups/world /tmp/test-world --dryrun
    ```
 3. Restore from S3:
    ```bash
-   aws s3 sync s3://minecraft-debney-backups/world /opt/bedrock
+   aws s3 sync s3://minecraft-debney-backups/worlds /opt/bedrock/worlds
    docker restart bedrock
    ```
 4. Join via the test server IP.  
@@ -146,8 +148,8 @@ aws s3 sync s3://minecraft-debney-backups/world /tmp/test-world --dryrun
 
 ### Spot-check files
 ```bash
-aws s3 ls s3://minecraft-debney-backups/world/ --recursive
-aws s3 cp s3://minecraft-debney-backups/world/level.dat .
+aws s3 ls s3://minecraft-debney-backups/worlds/ --recursive
+aws s3 cp s3://minecraft-debney-backups/worlds/BedrockWorld/level.dat .
 ```
 
 ---

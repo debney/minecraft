@@ -125,10 +125,24 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 locals {
   user_data = <<-BASH
     #!/bin/bash
-    set -euxo pipefail
+    set -uxo pipefail
 
     dnf update -y
-    dnf install -y docker awscli
+    dnf install -y docker
+
+    # AWS CLI v2 is preinstalled on the standard AL2023 AMI. Install only if
+    # missing (there is no "awscli" package; the v2 package is "awscli-2").
+    # Root needs it for the hourly S3 backup cron below.
+    command -v aws || dnf install -y awscli-2
+
+    # Ensure the SSM agent is present and running. It's preinstalled on the
+    # standard AMI; install explicitly as a safety net. Without it, remote
+    # management and the daily EventBridge -> SSM reboot silently do nothing.
+    systemctl enable --now amazon-ssm-agent || {
+      dnf install -y amazon-ssm-agent
+      systemctl enable --now amazon-ssm-agent
+    }
+
     systemctl enable --now docker
     usermod -aG docker ec2-user
 
@@ -137,7 +151,12 @@ locals {
 
     docker pull itzg/minecraft-bedrock-server:latest
 
-    docker run -d --name=bedrock \
+    # The "send-command" helper (used for the keepInventory rule below) writes
+    # to the server's console via its stdin, and locates the process through
+    # /proc. That needs: -i and -t so stdin is a PTY the command can be written
+    # to, and CAP_SYS_PTRACE so it can resolve the process (Docker drops that
+    # capability by default, which otherwise makes send-command fail).
+    docker run -d -it --cap-add=SYS_PTRACE --name=bedrock \
       -p 19132:19132/udp \
       -v /opt/bedrock:/data \
       --restart=always \
@@ -148,10 +167,25 @@ locals {
       -e LEVEL_NAME="${var.level_name}" \
       -e VIEW_DISTANCE=${var.view_distance} \
       -e MAX_PLAYERS=${var.max_players} \
+      -e ALLOW_CHEATS=${var.allow_cheats} \
       itzg/minecraft-bedrock-server:latest
 
-    # Hourly backup of /opt/bedrock to S3
-    grep -q 'minecraft-debney-backups' /etc/crontab || echo "0 * * * * root aws s3 sync /opt/bedrock s3://${aws_s3_bucket.minecraft_backups.bucket}/world" >> /etc/crontab
+    # World game rules are not server.properties values, so apply them via the
+    # console once the server is up. Best effort: retry until reachable. On a
+    # restored world they're already in level.dat; this covers fresh worlds.
+    (
+      for i in $(seq 1 30); do
+        docker exec bedrock send-command gamerule keepInventory ${var.keep_inventory} \
+          && docker exec bedrock send-command gamerule showcoordinates ${var.show_coordinates} \
+          && break
+        sleep 10
+      done
+    ) &
+
+    # Hourly backup of the world save data to S3 (the "worlds" dir is the
+    # only thing worth backing up; the server binary and packs are reinstalled
+    # by this script on every rebuild). --region avoids relying on env config.
+    grep -q 'minecraft-debney-backups' /etc/crontab || echo "0 * * * * root aws s3 sync /opt/bedrock/worlds s3://${aws_s3_bucket.minecraft_backups.bucket}/worlds --region ${var.aws_region}" >> /etc/crontab
   BASH
 }
 
@@ -163,8 +197,15 @@ data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["137112412989"] # Amazon
   filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    name = "name"
+    # Standard AL2023 only. The old "al2023-ami-*" pattern also matched
+    # "al2023-ami-minimal-*", which ships without the SSM agent and EC2
+    # Instance Connect — that broke SSM registration and the daily reboot.
+    values = ["al2023-ami-2023.*-kernel-*-x86_64"]
+  }
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
   }
 }
 
@@ -180,6 +221,13 @@ resource "aws_instance" "bedrock" {
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
+  }
+
+  # A newer AL2023 AMI release would otherwise force the instance to be
+  # destroyed and recreated, wiping the world. To rebuild deliberately,
+  # back up the world to S3 first, then: terraform apply -replace=aws_instance.bedrock
+  lifecycle {
+    ignore_changes = [ami, user_data]
   }
 
   tags = { Name = "bedrock-server" }
