@@ -168,6 +168,7 @@ locals {
       -e VIEW_DISTANCE=${var.view_distance} \
       -e MAX_PLAYERS=${var.max_players} \
       -e ALLOW_CHEATS=${var.allow_cheats} \
+      -e DEFAULT_PLAYER_PERMISSION_LEVEL="${var.default_player_permission_level}" \
       itzg/minecraft-bedrock-server:latest
 
     # World game rules are not server.properties values, so apply them via the

@@ -48,6 +48,14 @@ variable "allow_cheats" {
   default = true
 }
 
+# Permission level granted to players joining for the first time
+# (server.properties default-player-permission-level). "operator" lets every
+# player run commands/cheats. Use "member" to restrict commands to op'd players.
+variable "default_player_permission_level" {
+  type    = string
+  default = "operator"
+} # visitor|member|operator
+
 # World game rules (not server.properties settings), so they are applied via the
 # server console after the world loads. user_data sets them on every boot so
 # freshly generated worlds get them too.
