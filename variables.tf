@@ -61,7 +61,7 @@ variable "default_player_permission_level" {
 # freshly generated worlds get them too.
 variable "keep_inventory" {
   type    = bool
-  default = true
+  default = false
 }
 variable "show_coordinates" {
   type    = bool
