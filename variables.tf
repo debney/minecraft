@@ -67,6 +67,16 @@ variable "show_coordinates" {
   type    = bool
   default = true
 }
+
+# Percentage of players that must be in beds to skip the night (Bedrock game
+# rule playersSleepingPercentage). 0 = one sleeping player skips the night for
+# everyone ("one player sleep"); 100 = every player must be in bed. Re-applied
+# on every boot (below) so freshly generated worlds get it too.
+variable "players_sleeping_percentage" {
+  type    = number
+  default = 0
+}
+
 variable "view_distance" {
   type    = number
   default = 32

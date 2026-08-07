@@ -178,6 +178,7 @@ locals {
       for i in $(seq 1 30); do
         docker exec bedrock send-command gamerule keepInventory ${var.keep_inventory} \
           && docker exec bedrock send-command gamerule showcoordinates ${var.show_coordinates} \
+          && docker exec bedrock send-command gamerule playerssleepingpercentage ${var.players_sleeping_percentage} \
           && break
         sleep 10
       done
