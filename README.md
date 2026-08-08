@@ -113,6 +113,23 @@ For a setting to be both live *and* durable, do both.
 
 ## Resetting the world
 
+### Easy way — the helper script
+
+A helper script (`scripts/reset-world.sh`, installed to `/opt/bedrock/` on the
+server) does the whole snapshot → wipe → regenerate → re-apply-rules sequence in
+one command. On the server (SSM Session Manager → `bedrock-server`):
+
+```bash
+sudo /opt/bedrock/reset-world.sh              # snapshots to S3 first (safe default)
+sudo /opt/bedrock/reset-world.sh --no-backup  # skip the snapshot
+```
+
+It's auto-installed on any fresh rebuild via `user_data`. To install it on an
+already-running server (or after editing it), see the one-liner in the repo's
+`scripts/reset-world.sh` header, or re-run the manual steps below.
+
+### Manual way
+
 This wipes the current world and generates a fresh one. **Back up first** — the
 hourly S3 sync mirrors into `.../worlds`, so take a separate dated snapshot the
 mirror won't overwrite. Run everything on the server (SSM Session Manager →

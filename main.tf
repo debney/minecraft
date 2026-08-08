@@ -123,6 +123,10 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 ############################################
 
 locals {
+  # Canonical world-reset helper lives at scripts/reset-world.sh. Encode it so
+  # it can be embedded in user_data below without any shell-escaping headaches.
+  reset_world_b64 = base64encode(file("${path.module}/scripts/reset-world.sh"))
+
   user_data = <<-BASH
     #!/bin/bash
     set -uxo pipefail
@@ -148,6 +152,13 @@ locals {
 
     mkdir -p /opt/bedrock
     chown ec2-user:ec2-user /opt/bedrock
+
+    # Install the world-reset helper (source: scripts/reset-world.sh). Lets an
+    # admin reset the world with one command via SSM Session Manager:
+    #   sudo /opt/bedrock/reset-world.sh              # snapshot first
+    #   sudo /opt/bedrock/reset-world.sh --no-backup  # skip the snapshot
+    echo "${local.reset_world_b64}" | base64 -d > /opt/bedrock/reset-world.sh
+    chmod +x /opt/bedrock/reset-world.sh
 
     docker pull itzg/minecraft-bedrock-server:latest
 
