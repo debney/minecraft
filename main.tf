@@ -176,6 +176,7 @@ locals {
       -e GAMEMODE="${var.gamemode}" \
       -e DIFFICULTY="${var.difficulty}" \
       -e LEVEL_NAME="${var.level_name}" \
+      -e LEVEL_SEED="${var.level_seed}" \
       -e VIEW_DISTANCE=${var.view_distance} \
       -e MAX_PLAYERS=${var.max_players} \
       -e ALLOW_CHEATS=${var.allow_cheats} \

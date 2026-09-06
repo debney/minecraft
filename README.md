@@ -120,9 +120,15 @@ server) does the whole snapshot → wipe → regenerate → re-apply-rules seque
 one command. On the server (SSM Session Manager → `bedrock-server`):
 
 ```bash
-sudo /opt/bedrock/reset-world.sh              # snapshots to S3 first (safe default)
-sudo /opt/bedrock/reset-world.sh --no-backup  # skip the snapshot
+sudo /opt/bedrock/reset-world.sh                     # snapshots to S3 first (safe default)
+sudo /opt/bedrock/reset-world.sh --no-backup         # skip the snapshot
+sudo /opt/bedrock/reset-world.sh --seed 12345        # generate a specific world from a seed
 ```
+
+A **seed** produces one specific, reproducible world. It only applies to a
+newly generated world; `--seed` recreates the container (preserving its other
+settings) so the `LEVEL_SEED` takes effect. The `level_seed` variable in
+`variables.tf` sets the seed used on a from-scratch rebuild (empty = random).
 
 It's auto-installed on any fresh rebuild via `user_data`. To install it on an
 already-running server (or after editing it), see the one-liner in the repo's

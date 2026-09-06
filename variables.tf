@@ -41,6 +41,13 @@ variable "level_name" {
   default = "SurvivalWorld"
 }
 
+# Optional world-generation seed. Empty = a random world. A seed only takes
+# effect when a brand-new world is generated (see scripts/reset-world.sh --seed).
+variable "level_seed" {
+  type    = string
+  default = ""
+}
+
 # Enables cheats/commands for the world (server.properties allow-cheats). Must
 # be true for the showcoordinates game rule to actually display coordinates.
 variable "allow_cheats" {
