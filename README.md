@@ -109,6 +109,23 @@ change the currently running world. There are two levels:
 
 For a setting to be both live *and* durable, do both.
 
+### Enabling / disabling cheats
+
+`allow-cheats` is set via the container env, so toggling it on a running world
+recreates the container (world preserved) — use the helper:
+
+```bash
+sudo /opt/bedrock/set-cheats.sh off   # disable cheats
+sudo /opt/bedrock/set-cheats.sh on    # enable cheats
+```
+
+With cheats **off**, players can't run commands and on-screen coordinates stop
+displaying (the `showcoordinates` rule needs cheats). Game rules already set in
+the world are preserved but can't be changed until cheats are re-enabled — so
+if you reset the world while cheats are off, re-enable them to re-apply
+keepInventory / one-player-sleep, then turn them off again. The `allow_cheats`
+variable sets the default for from-scratch rebuilds.
+
 ---
 
 ## Resetting the world

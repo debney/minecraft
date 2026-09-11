@@ -48,11 +48,13 @@ variable "level_seed" {
   default = ""
 }
 
-# Enables cheats/commands for the world (server.properties allow-cheats). Must
-# be true for the showcoordinates game rule to actually display coordinates.
+# Enables cheats/commands for the world (server.properties allow-cheats). When
+# false, players cannot run commands AND on-screen coordinates won't display
+# (the showcoordinates game rule requires cheats). Toggle on a running world
+# with scripts/set-cheats.sh.
 variable "allow_cheats" {
   type    = bool
-  default = true
+  default = false
 }
 
 # Permission level granted to players joining for the first time
