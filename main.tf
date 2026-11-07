@@ -172,6 +172,7 @@ locals {
       -v /opt/bedrock:/data \
       --restart=always \
       -e EULA=${var.eula ? "TRUE" : "FALSE"} \
+      -e VERSION="${var.bedrock_version}" \
       -e SERVER_NAME="${var.server_name}" \
       -e GAMEMODE="${var.gamemode}" \
       -e DIFFICULTY="${var.difficulty}" \

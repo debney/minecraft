@@ -128,6 +128,27 @@ variable sets the default for from-scratch rebuilds.
 
 ---
 
+## Server version (fixing "InitialConnection-149")
+
+Bedrock requires the **server and client to be on matching versions**. The
+`bedrock_version` variable sets which build the server runs (passed to the
+image's `VERSION`). Avoid `LATEST`: the newest *server* build can jump ahead of
+the retail client and lock players out with `InitialConnection-149`.
+
+If players hit that error, the server is ahead of their app. Pin it to the
+version their Minecraft **title screen** shows (e.g. `26.60`), using the build
+that matches (client `26.60` -> server `1.26.60.6`; the newer `1.26.61.1`
+breaks `26.60` clients). Change it live on the running world (map preserved):
+
+```bash
+sudo /opt/bedrock/set-version.sh 1.26.60.6
+```
+
+When the kids' app later updates, bump both `bedrock_version` and the live
+server with the same helper.
+
+---
+
 ## Resetting the world
 
 ### Easy way — the helper script

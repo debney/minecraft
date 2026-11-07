@@ -48,6 +48,16 @@ variable "level_seed" {
   default = ""
 }
 
+# Bedrock server version passed to the itzg image. "LATEST" tracks the newest
+# server build, but that can jump AHEAD of the retail client and lock players
+# out ("InitialConnection-149"). Pin to the build matching players' app (their
+# title-screen version), and bump it when their app updates. Change it live on a
+# running world with scripts/set-version.sh. Client "26.60" -> "1.26.60.6".
+variable "bedrock_version" {
+  type    = string
+  default = "1.26.60.6"
+}
+
 # Enables cheats/commands for the world (server.properties allow-cheats). When
 # false, players cannot run commands AND on-screen coordinates won't display
 # (the showcoordinates game rule requires cheats). Toggle on a running world
