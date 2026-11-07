@@ -136,12 +136,13 @@ image's `VERSION`). Avoid `LATEST`: the newest *server* build can jump ahead of
 the retail client and lock players out with `InitialConnection-149`.
 
 If players hit that error, the server is ahead of their app. Pin it to the
-version their Minecraft **title screen** shows (e.g. `26.60`), using the build
-that matches (client `26.60` -> server `1.26.60.6`; the newer `1.26.61.1`
-breaks `26.60` clients). Change it live on the running world (map preserved):
+version their Minecraft **title screen** shows, using the matching server build
+(client `26.62` -> server `1.26.62.1`). An older server still opens a world that
+a newer server previously upgraded; it just drops any too-new pack. Change it
+live on the running world (map preserved):
 
 ```bash
-sudo /opt/bedrock/set-version.sh 1.26.60.6
+sudo /opt/bedrock/set-version.sh 1.26.62.1
 ```
 
 When the kids' app later updates, bump both `bedrock_version` and the live

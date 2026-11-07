@@ -52,10 +52,10 @@ variable "level_seed" {
 # server build, but that can jump AHEAD of the retail client and lock players
 # out ("InitialConnection-149"). Pin to the build matching players' app (their
 # title-screen version), and bump it when their app updates. Change it live on a
-# running world with scripts/set-version.sh. Client "26.60" -> "1.26.60.6".
+# running world with scripts/set-version.sh. Client "26.62" -> "1.26.62.1".
 variable "bedrock_version" {
   type    = string
-  default = "1.26.60.6"
+  default = "1.26.62.1"
 }
 
 # Enables cheats/commands for the world (server.properties allow-cheats). When
